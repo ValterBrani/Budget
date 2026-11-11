@@ -1,0 +1,11 @@
+# Relevés bancaires et sauvegardes personnelles : ne jamais les publier
+*.csv
+!exemples/*.csv
+budget-sauvegarde-*.json
+budget-operations-*.csv
+releves/
+
+# Divers
+node_modules/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,14 @@
+{
+  "name": "Budget",
+  "short_name": "Budget",
+  "description": "Budget personnel : saisie express et import des relevés CSV.",
+  "lang": "fr-CA",
+  "start_url": "./#/accueil",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f5f2",
+  "theme_color": "#1d5a42",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
