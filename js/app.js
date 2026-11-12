@@ -34,14 +34,19 @@
     if (!B.save(S)) toast("Impossible d'enregistrer : l'espace du navigateur est plein. Exporte une sauvegarde depuis Réglages.");
   }
 
+  // inc : revenus, exp : dépenses, sav : mises de côté, inv : investi.
+  // cap : capacité d'investir = revenus − dépenses − mises de côté.
   function totals(list) {
-    let inc = 0, exp = 0;
+    let inc = 0, exp = 0, sav = 0, inv = 0;
     for (const t of list) {
       const k = kindOf(t);
       if (k === 'transfer') continue;
-      if (k === 'income') inc += t.amount; else exp -= t.amount;
+      if (k === 'income') inc += t.amount;
+      else if (k === 'saving') sav -= t.amount;
+      else if (k === 'invest') inv -= t.amount;
+      else exp -= t.amount;
     }
-    return { inc, exp, net: inc - exp };
+    return { inc, exp, sav, inv, net: inc - exp, cap: inc - exp - sav };
   }
   const inMonth = (ym) => S.transactions.filter((t) => t.date.startsWith(ym));
 
@@ -49,9 +54,21 @@
     return B.categorize(desc, cents, S.rules, catMap(), hint);
   }
 
+  // Types de catégories : [identifiant, libellé au singulier, libellé de groupe]
+  const KINDS = [
+    ['expense', 'Dépense', 'Dépenses'],
+    ['income', 'Revenu', 'Revenus'],
+    ['saving', 'Mise de côté', 'Mises de côté'],
+    ['invest', 'Investissement', 'Investissement'],
+    ['transfer', 'Exclue des totaux', 'Exclus des totaux'],
+  ];
+  const kindOptions = (selected) => KINDS.map(([k, label]) => `<option value="${k}"${k === selected ? ' selected' : ''}>${label}</option>`).join('');
+  // Une catégorie convient-elle au sens choisi dans la saisie express (dépense ou revenu) ?
+  const fitsType = (c, type) => (type === 'income' ? c.kind === 'income' || c.kind === 'transfer' : c.kind !== 'income');
+
   function catOptions(selected, opts) {
     opts = opts || {};
-    const groups = [['expense', 'Dépenses'], ['income', 'Revenus'], ['transfer', 'Exclus des totaux']];
+    const groups = KINDS.map(([k, , plural]) => [k, plural]);
     let h = opts.noEmpty ? '' : `<option value="">${opts.emptyLabel || 'À catégoriser'}</option>`;
     for (const [k, label] of groups) {
       const cs = S.categories.filter((c) => c.kind === k);
@@ -128,15 +145,14 @@
   function suggestCategory(desc, type) {
     if (!desc) return '';
     const n = ' ' + B.normalizeText(desc) + ' ';
-    const kind = type === 'income' ? 'income' : 'expense';
     // Nom de catégorie tapé directement : « 12 épicerie »
     for (const c of S.categories) {
       const words = B.normalizeText(c.name).split(' ').filter((w) => w.length >= 4);
-      if (words.some((w) => n.includes(' ' + w)) && (c.kind === kind || c.kind === 'transfer')) return c.id;
+      if (words.some((w) => n.includes(' ' + w)) && fitsType(c, type)) return c.id;
     }
     const r = categorize(desc, type === 'income' ? 1 : -1);
     const c = catOf(r.categoryId);
-    if (c && (c.kind === kind || c.kind === 'transfer')) return c.id;
+    if (c && fitsType(c, type)) return c.id;
     return '';
   }
 
@@ -199,15 +215,23 @@
     const input = $('#quickInput'); if (input) input.focus();
   }
 
-  /** Crée une règle « mot-clé → catégorie » si les règles actuelles ne donnent pas déjà ce résultat. */
-  function learnRule(description, categoryId, silent) {
-    const key = B.merchantKey(description);
+  /**
+   * Crée une règle « mot-clé → catégorie » si les règles actuelles ne donnent pas déjà ce résultat.
+   * opts : { rk (mot-clé fourni par le relevé), noRule, hint, amount } pour une opération importée.
+   */
+  function learnRule(description, categoryId, silent, opts) {
+    opts = opts || {};
+    if (opts.noRule) return null;
+    // Un mot-clé fourni par le relevé (bénéficiaire, note) doit correspondre au mot complet
+    const pattern = opts.rk ? opts.rk + ' ' : B.merchantKey(description);
+    const key = B.normalizeText(pattern);
     if (!key || key.length < 3) return null;
-    const current = categorize(description, catOf(categoryId) && catOf(categoryId).kind === 'income' ? 1 : -1);
-    if (current.categoryId === categoryId) return null;
+    const c = catOf(categoryId);
+    const sign = opts.amount != null ? opts.amount : c && c.kind === 'income' ? 1 : -1;
+    if (categorize(description, sign, opts.hint).categoryId === categoryId) return null;
     const existing = S.rules.find((r) => B.normalizeText(r.pattern) === key);
     if (existing) existing.categoryId = categoryId;
-    else S.rules.push({ id: B.uid(), pattern: key, categoryId });
+    else S.rules.push({ id: B.uid(), pattern, categoryId });
     if (!silent) persist();
     return key;
   }
@@ -232,7 +256,6 @@
 
   function summaryHTML(list) {
     const t = totals(list);
-    const rate = t.inc > 0 ? Math.round((t.net / t.inc) * 100) : null;
     const budgets = S.categories.filter((c) => c.kind === 'expense' && c.budget > 0);
     const budgetTotal = budgets.reduce((a, c) => a + c.budget, 0);
     let budgetLine = '';
@@ -243,11 +266,17 @@
         <span class="sum-value">${money(Math.abs(left))}</span>
         <span class="sum-note">${left >= 0 ? 'encore disponibles' : 'de dépassement'} sur ${money(budgetTotal)}</span></div>`;
     }
+    let capNote;
+    if (t.inc <= 0) capNote = 'aucun revenu ce mois-ci';
+    else if (t.cap < 0) capNote = t.sav > 0 ? 'tes dépenses et tes mises de côté dépassent tes revenus' : 'tu dépenses plus que tu ne gagnes';
+    else if (t.inv > 0) capNote = t.cap >= t.inv ? `${money(t.inv)} investis, ${money(t.cap - t.inv)} encore disponibles` : `${money(t.inv)} investis, ${money(t.inv - t.cap)} de plus que ta capacité`;
+    else capNote = `${Math.round((t.cap / t.inc) * 100)} % de tes revenus, rien d'investi ce mois-ci`;
     return `<section class="summary" aria-label="Résumé du mois">
       <div class="sum-item"><span class="sum-label">Revenus</span><span class="sum-value">${money(t.inc)}</span></div>
       <div class="sum-item"><span class="sum-label">Dépenses</span><span class="sum-value">${money(t.exp)}</span></div>
-      <div class="sum-item sum-net"><span class="sum-label">Reste</span><span class="sum-value ${t.net >= 0 ? 'pos' : 'neg'}">${signed(t.net)}</span>
-        <span class="sum-note">${rate == null ? 'aucun revenu ce mois-ci' : rate >= 0 ? `${rate} % de tes revenus épargnés` : 'tu dépenses plus que tu ne gagnes'}</span></div>
+      ${t.sav !== 0 ? `<div class="sum-item"><span class="sum-label">Mis de côté</span><span class="sum-value">${money(t.sav)}</span></div>` : ''}
+      <div class="sum-item sum-net"><span class="sum-label">Capacité d'investir</span><span class="sum-value ${t.cap >= 0 ? 'pos' : 'neg'}">${signed(t.cap)}</span>
+        <span class="sum-note">${capNote}</span></div>
       ${budgetLine}
     </section>`;
   }
@@ -273,7 +302,9 @@
       .filter((r) => r.spent > 0 || r.c.budget > 0)
       .sort((a, b) => b.spent - a.spent);
     const uncategorized = list.filter((t) => !t.cat && t.amount < 0).reduce((a, t) => a - t.amount, 0);
-    if (!rows.length && !uncategorized) return '<p class="muted">Aucune dépense ce mois-ci.</p>';
+    const pots = S.categories.filter((c) => c.kind === 'saving' || c.kind === 'invest').map((c) => ({ c, v: spentIn(list, c.id) })).filter((r) => r.v !== 0);
+    const potsHTML = pots.length ? `<h3 class="sub">Mis de côté et investi</h3><ul class="pots">${pots.map(({ c, v }) => `<li><span class="env-name"><span class="env-ico" aria-hidden="true">${esc(c.icon)}</span>${esc(c.name)}</span><b class="num">${money(v)}</b></li>`).join('')}</ul>` : '';
+    if (!rows.length && !uncategorized) return '<p class="muted">Aucune dépense ce mois-ci.</p>' + potsHTML;
     const maxSpent = Math.max(...rows.map((r) => r.spent), uncategorized, 1);
     const li = rows.map(({ c, spent }) => {
       let bar, status;
@@ -295,7 +326,7 @@
     const unc = uncategorized ? `<li class="env env-unc"><div class="env-top"><span class="env-name"><span class="env-ico" aria-hidden="true">❔</span>À catégoriser</span><span class="env-amt"><b>${money(uncategorized)}</b></span></div>
       <div class="bar bar-plain"><span class="bar-fill" style="width:${(uncategorized / maxSpent) * 100}%"></span></div>
       <div class="env-foot"><button class="link small" data-action="show-uncat">Classer ces dépenses</button></div></li>` : '';
-    return `<ul class="envelopes">${li}${unc}</ul>`;
+    return `<ul class="envelopes">${li}${unc}</ul>${potsHTML}`;
   }
 
   function chartData() {
@@ -386,13 +417,12 @@
           <label class="field"><span>Catégorie</span><select id="fCat"><option value="">Toutes</option><option value="__none"${f.cat === '__none' ? ' selected' : ''}>À catégoriser</option>${catOptions(f.cat, { noEmpty: true })}</select></label>
           <label class="field"><span>Compte</span><select id="fAcct">${acctOptions(f.acct, 'Tous')}</select></label>
           <label class="field"><span>Type</span><select id="fType">
-            <option value="">Tous</option><option value="expense"${f.type === 'expense' ? ' selected' : ''}>Dépenses</option>
-            <option value="income"${f.type === 'income' ? ' selected' : ''}>Revenus</option><option value="transfer"${f.type === 'transfer' ? ' selected' : ''}>Exclus des totaux</option></select></label>
+            <option value="">Tous</option>${KINDS.map(([k, , plural]) => `<option value="${k}"${f.type === k ? ' selected' : ''}>${plural}</option>`).join('')}</select></label>
           <label class="field"><span>Période</span><select id="fScope">
             <option value="month"${f.scope === 'month' ? ' selected' : ''}>${esc(monthName(ui.month))}</option>
             <option value="all"${f.scope === 'all' ? ' selected' : ''}>Tout l'historique</option></select></label>
         </div>
-        <p class="result-line">${list.length} opération${list.length > 1 ? 's' : ''}. Revenus ${money(t.inc)}, dépenses ${money(t.exp)}.
+        <p class="result-line">${list.length} opération${list.length > 1 ? 's' : ''}. Revenus ${money(t.inc)}, dépenses ${money(t.exp)}${t.sav ? `, mis de côté ${money(t.sav)}` : ''}${t.inv ? `, investi ${money(t.inv)}` : ''}.
           ${f.q || f.cat || f.acct || f.type ? '<button class="link" data-action="clear-filters">Effacer les filtres</button>' : ''}</p>
         ${list.length ? body : `<p class="muted">Aucune opération ne correspond. ${S.transactions.length ? '' : 'Ajoute une dépense ci-dessus ou importe un relevé.'}</p>`}
         ${list.length > ui.limit ? `<button class="btn" data-action="more">Afficher ${Math.min(200, list.length - ui.limit)} de plus</button>` : ''}
@@ -446,16 +476,17 @@
       </section>
       <section class="panel">
         <h2>Catégories</h2>
+        <p class="muted">Une mise de côté (fond de prévoyance, épargne) réduit ta capacité d'investir sans compter comme une dépense. Un investissement est comparé à cette capacité. Une catégorie exclue des totaux n'est ni un revenu ni une dépense : virements entre tes comptes, paiements de carte.</p>
         <ul class="set-list">${S.categories.map((c) => `<li>
           <label class="sr-only" for="ci-${esc(c.id)}">Icône</label><input class="emoji-input" id="ci-${esc(c.id)}" data-cat-icon="${esc(c.id)}" value="${esc(c.icon)}" maxlength="4">
           <label class="sr-only" for="cn-${esc(c.id)}">Nom</label><input id="cn-${esc(c.id)}" data-cat-name="${esc(c.id)}" value="${esc(c.name)}">
           <label class="sr-only" for="ck-${esc(c.id)}">Type</label><select id="ck-${esc(c.id)}" data-cat-kind="${esc(c.id)}">
-            <option value="expense"${c.kind === 'expense' ? ' selected' : ''}>Dépense</option><option value="income"${c.kind === 'income' ? ' selected' : ''}>Revenu</option><option value="transfer"${c.kind === 'transfer' ? ' selected' : ''}>Exclue des totaux</option></select>
+            ${kindOptions(c.kind)}</select>
           <button class="icon-btn" data-action="del-cat" data-id="${esc(c.id)}" aria-label="Supprimer la catégorie ${esc(c.name)}">${icon('trash')}</button></li>`).join('')}</ul>
         <form class="inline-form" data-form="add-cat">
           <label class="field"><span>Icône</span><input class="emoji-input" name="icon" value="🏷️" maxlength="4"></label>
           <label class="field grow"><span>Nouvelle catégorie</span><input name="name" placeholder="Garderie" required></label>
-          <label class="field"><span>Type</span><select name="kind"><option value="expense">Dépense</option><option value="income">Revenu</option><option value="transfer">Exclue des totaux</option></select></label>
+          <label class="field"><span>Type</span><select name="kind">${kindOptions('expense')}</select></label>
           <button class="btn">Ajouter</button></form>
       </section>
       <section class="panel">
@@ -532,15 +563,17 @@
   /** Après un changement manuel de catégorie : propose d'appliquer aux opérations semblables. */
   function afterCategoryChange(t) {
     if (!t.cat) return;
-    const key = B.merchantKey(t.desc);
-    if (!key || key.length < 3) return;
-    const similar = S.transactions.filter((x) => x.id !== t.id && x.cat !== t.cat && x.catSrc !== 'user' && B.matchesKey(x.desc, key));
     const c = catOf(t.cat);
+    const pattern = t.noRule ? '' : t.rk ? t.rk + ' ' : B.merchantKey(t.desc);
+    const key = B.normalizeText(pattern);
+    // Libellé trop général (« Virement interne » sans note) : on ne généralise pas
+    if (key.length < 3) { toast(`${t.desc} est maintenant dans ${c.name}.`); return; }
+    const similar = S.transactions.filter((x) => x.id !== t.id && x.cat !== t.cat && x.catSrc !== 'user' && !x.noRule && B.matchesKey(x.desc, pattern));
     const label = similar.length ? `Classer aussi ${similar.length} autre${similar.length > 1 ? 's' : ''} « ${key} »` : `Retenir « ${key} »`;
     toast(`${t.desc} est maintenant dans ${c.name}.`, {
       label,
       run: () => {
-        learnRule(t.desc, t.cat, true);
+        learnRule(t.desc, t.cat, true, { rk: t.rk, hint: t.hint, amount: t.amount });
         similar.forEach((x) => { x.cat = t.cat; x.catSrc = 'auto'; });
         persist();
         render();
@@ -586,7 +619,7 @@
 
   function buildPreview() {
     const imp = ui.imp;
-    const { items, skipped } = B.applyMapping(imp.det.rows, imp.mapping);
+    const { items, skipped, cancelled } = B.applyMapping(imp.det.rows, imp.mapping);
     const keys = B.dedupeKeys(items);
     const existingKeys = new Set(S.transactions.map((t) => t.key).filter(Boolean));
     const manual = S.transactions.filter((t) => t.src === 'manual');
@@ -594,9 +627,10 @@
       const dup = existingKeys.has(keys[i]);
       const near = !dup && manual.find((t) => t.amount === it.amount && Math.abs(B.toDate(t.date) - B.toDate(it.date)) <= 3 * 864e5);
       const r = categorize(it.description, it.amount, it.hint);
-      return Object.assign(it, { key: keys[i], dup, near: near || null, cat: r.categoryId || '', touched: false, on: !dup && !near });
+      return Object.assign(it, { key: keys[i], dup, near: near || null, cat: r.categoryId || '', touched: false, on: !dup && !near && !it.pending });
     });
     imp.skipped = skipped;
+    imp.cancelled = cancelled || 0;
   }
 
   function colOptions(selected, allowNone) {
@@ -626,7 +660,8 @@
           <h3>CIBC</h3>
           <p>Sur le site Services bancaires CIBC en direct (pas dans l'application mobile) : choisis le compte ou la carte, puis <b>Télécharger les transactions</b>. Choisis la période (jusqu'à 13 mois) et le format <b>CSV</b>.</p>
           <h3>Wealthsimple</h3>
-          <p>Sur le site web de Wealthsimple : ouvre <b>Activité</b> et télécharge l'activité en CSV, ou va dans <b>Documents</b>, relevés mensuels, et choisis <b>Télécharger le CSV</b>. Pour la carte de crédit, le relevé CSV se télécharge aussi depuis le site web.</p>
+          <p>Sur le site web de Wealthsimple : ouvre le compte chèques ou la carte de crédit, puis exporte son activité en CSV. Les fichiers s'appellent <code>chequing-activities-…csv</code> et <code>credit-card-activities-…csv</code>. Les relevés mensuels en CSV (dans <b>Documents</b>) sont aussi reconnus.</p>
+          <p>Astuce : ajoute une note à tes virements entre comptes dans Wealthsimple (« compte urgence », « CELI », « fond de prévoyance »). L'application s'en sert pour les classer en épargne ou en investissement.</p>
           <h3>Autres banques</h3>
           <p>Cherche « Télécharger », « Exporter » ou « Historique » dans tes services en ligne et choisis CSV ou Excel CSV. Si les colonnes ne sont pas reconnues, tu pourras les choisir à la main, une seule fois : l'app retient le format.</p>
         </details>
@@ -666,13 +701,13 @@
                <label class="field"><span>Dépôts (revenus)</span><select data-map="credit">${colOptions(m.credit, true)}</select></label>`}
         </div>
       </details>
-      <p class="result-line"><b>${newCount}</b> à importer${dupCount ? `, ${dupCount} déjà importée${dupCount > 1 ? 's' : ''}` : ''}${nearCount ? `, ${nearCount} qui ressemble${nearCount > 1 ? 'nt' : ''} à une saisie manuelle (décochée${nearCount > 1 ? 's' : ''})` : ''}${imp.skipped ? `, ${imp.skipped} ligne${imp.skipped > 1 ? 's' : ''} illisible${imp.skipped > 1 ? 's' : ''} ignorée${imp.skipped > 1 ? 's' : ''}` : ''}.</p>
+      <p class="result-line"><b>${newCount}</b> à importer${dupCount ? `, ${dupCount} déjà importée${dupCount > 1 ? 's' : ''}` : ''}${nearCount ? `, ${nearCount} qui ressemble${nearCount > 1 ? 'nt' : ''} à une saisie manuelle (décochée${nearCount > 1 ? 's' : ''})` : ''}${imp.skipped ? `, ${imp.skipped} ligne${imp.skipped > 1 ? 's' : ''} illisible${imp.skipped > 1 ? 's' : ''} ignorée${imp.skipped > 1 ? 's' : ''}` : ''}${imp.cancelled ? `, ${imp.cancelled} annulée${imp.cancelled > 1 ? 's' : ''} ou refusée${imp.cancelled > 1 ? 's' : ''} ignorée${imp.cancelled > 1 ? 's' : ''}` : ''}${imp.items.some((i) => i.pending) ? `, ${imp.items.filter((i) => i.pending).length} en attente (décochée${imp.items.filter((i) => i.pending).length > 1 ? 's' : ''})` : ''}.</p>
       <div class="imp-table-wrap"><table class="imp-table">
         <thead><tr><th><input type="checkbox" id="impAll" aria-label="Tout cocher"${newCount && newCount === imp.items.filter((i) => !i.dup).length ? ' checked' : ''}></th><th>Date</th><th>Description</th><th>Catégorie</th><th class="num">Montant</th></tr></thead>
         <tbody>${imp.items.map((it, i) => `<tr class="${it.dup ? 'is-dup' : ''}${it.on ? '' : ' is-off'}">
           <td><input type="checkbox" data-imp-on="${i}"${it.on ? ' checked' : ''} aria-label="Importer cette ligne"></td>
           <td class="nowrap">${shortDate(it.date)}</td>
-          <td>${esc(it.description)}${it.dup ? ' <span class="tag">Déjà importée</span>' : ''}${it.near ? ` <span class="tag">Saisie « ${esc(it.near.desc)} » le ${shortDate(it.near.date)}</span>` : ''}</td>
+          <td>${esc(it.description)}${it.dup ? ' <span class="tag">Déjà importée</span>' : ''}${it.pending ? ' <span class="tag">En attente</span>' : ''}${it.near ? ` <span class="tag">Saisie « ${esc(it.near.desc)} » le ${shortDate(it.near.date)}</span>` : ''}</td>
           <td><select data-imp-cat="${i}" aria-label="Catégorie">${catOptions(it.cat)}</select></td>
           <td class="num nowrap ${it.amount > 0 ? 'pos' : ''}">${signed(it.amount)}</td></tr>`).join('')}</tbody>
       </table></div>
@@ -693,8 +728,8 @@
       else { acctId = B.uid(); S.accounts.push({ id: acctId, name, bank: imp.det.bank || '' }); }
     }
     const chosen = imp.items.filter((i) => i.on);
-    chosen.forEach((it) => S.transactions.push({ id: B.uid(), date: it.date, desc: it.description, amount: it.amount, cat: it.cat || null, catSrc: it.touched ? 'user' : 'auto', acct: acctId, note: '', key: it.key, src: 'import' }));
-    Object.entries(imp.learn).forEach(([desc, cat]) => learnRule(desc, cat, true));
+    chosen.forEach((it) => S.transactions.push(Object.assign({ id: B.uid(), date: it.date, desc: it.description, amount: it.amount, cat: it.cat || null, catSrc: it.touched ? 'user' : 'auto', acct: acctId, note: '', key: it.key, src: 'import' }, it.ruleKey ? { rk: it.ruleKey } : null, it.noRule ? { noRule: true } : null, it.hint ? { hint: it.hint } : null)));
+    Object.values(imp.learn).forEach((l) => learnRule(l.desc, l.cat, true, l));
     if (imp.changed) S.profiles[imp.det.signature] = Object.assign({}, imp.mapping, { label: imp.det.label });
     S.settings.acctBySig = Object.assign(S.settings.acctBySig || {}, { [imp.det.signature + '|' + (imp.det.accountHint || '')]: acctId });
     persist();
@@ -733,6 +768,8 @@
       add(d(3), 'INTERNET BILL PAY HYDRO-QUEBEC', -between(78, 132), chq);
       add(d(6), 'INTERNET BILL PAY VIDEOTRON', -8500, chq);
       add(d(10), 'PREAUTHORIZED DEBIT WEALTHSIMPLE', -25000, chq);
+      add(d(2), 'Virement compte urgence', -10000, chq);
+      add(d(16), 'Virement CELI placements', -40000, chq);
       add(d(10), 'Transfert de CIBC', 25000, ws);
       add(d(16), 'INTERNET BILL PAY CIBC VISA', -between(700, 1100), chq);
       add(d(16), 'PAYMENT THANK YOU/PAIEMENT MERCI', between(700, 1100), visa);
@@ -797,7 +834,7 @@
       ui.quick.type = qt.dataset.qtype;
       $$('[data-qtype]').forEach((b) => b.setAttribute('aria-pressed', String(b === qt)));
       const c = catOf(ui.quick.cat);
-      if (ui.quick.catTouched && c && c.kind !== 'transfer' && c.kind !== (ui.quick.type === 'income' ? 'income' : 'expense')) ui.quick.catTouched = false;
+      if (ui.quick.catTouched && c && !fitsType(c, ui.quick.type)) ui.quick.catTouched = false;
       updateQuickPreview();
       $('#quickInput').focus();
       return;
@@ -862,7 +899,7 @@
         let n = 0;
         S.transactions.forEach((t) => {
           if (t.catSrc === 'user') return;
-          const r = categorize(t.desc, t.amount);
+          const r = categorize(t.desc, t.amount, t.hint);
           if (r.categoryId && r.categoryId !== t.cat) { t.cat = r.categoryId; n++; }
         });
         persist(); render();
@@ -963,11 +1000,13 @@
     if (d.impCat != null) {
       const it = imp.items[+d.impCat];
       it.cat = t.value; it.touched = true;
-      if (t.value) {
-        // Même commerce ailleurs dans le fichier : même catégorie
-        const key = B.merchantKey(it.description);
-        imp.items.forEach((o) => { if (!o.touched && key && B.matchesKey(o.description, key)) o.cat = t.value; });
-        imp.learn[it.description] = t.value;
+      if (t.value && !it.noRule) {
+        // Même commerce, même bénéficiaire ou même note ailleurs dans le fichier : même catégorie
+        const pattern = it.ruleKey ? it.ruleKey + ' ' : B.merchantKey(it.description);
+        if (B.normalizeText(pattern).length >= 3) {
+          imp.items.forEach((o) => { if (!o.touched && !o.noRule && B.matchesKey(o.description, pattern)) o.cat = t.value; });
+          imp.learn[pattern] = { desc: it.description, cat: t.value, rk: it.ruleKey, hint: it.hint, amount: it.amount };
+        }
       }
       renderImport();
     }

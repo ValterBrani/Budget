@@ -7,6 +7,7 @@ const path = require('node:path');
 require('../js/csv.js');
 require('../js/categories.js');
 require('../js/banks.js');
+require('../js/store.js');
 const B = globalThis.Budget;
 
 const ex = (f) => fs.readFileSync(path.join(__dirname, '..', 'exemples', f), 'utf8');
@@ -86,9 +87,9 @@ test('Wealthsimple relevé mensuel', () => {
   const { items } = B.applyMapping(det.rows, det.mapping);
   assert.equal(items.length, 10);
   assert.equal(items[1].amount, -7318);
+  // Un virement vers un CELI est un investissement, pas un simple transfert
   const tfsa = items.find((t) => t.type === 'TRFOUT');
-  assert.equal(tfsa.hint.strong, true);
-  assert.equal(B.categorize(tfsa.description, tfsa.amount, [], cats, tfsa.hint).categoryId, 'transferts');
+  assert.equal(B.categorize(tfsa.description, tfsa.amount, [], cats, tfsa.hint).categoryId, 'investissement');
   const int = items.find((t) => t.type === 'INT');
   assert.equal(B.categorize(int.description, int.amount, [], cats, int.hint).categoryId, 'interets');
 });
@@ -102,7 +103,8 @@ test('Wealthsimple export d’activités', () => {
   const { items } = B.applyMapping(det.rows, det.mapping);
   assert.equal(items.length, 2);
   assert.equal(items[0].amount, -32100);
-  assert.equal(B.categorize(items[0].description, items[0].amount, [], cats, items[0].hint).categoryId, 'placements');
+  // Un achat de titres dans un compte de placement n'est ni un revenu ni une dépense
+  assert.equal(B.categorize(items[0].description, items[0].amount, [], cats, items[0].hint).categoryId, 'transferts');
   assert.equal(B.categorize(items[1].description, items[1].amount, [], cats, items[1].hint).categoryId, 'interets');
 });
 
@@ -169,4 +171,148 @@ test('Mot-clé de commerce', () => {
   assert.equal(B.merchantKey('Purchase at STARBUCKS 4352'), 'starbucks');
   assert.equal(B.merchantKey('Purchase at IGA EXTRA FAMILLE DUCHARME'), 'iga extra');
   assert.ok(B.matchesKey('TIM HORTONS #999 LAVAL', 'tim hortons'));
+});
+
+const catOf = (t, rules) => B.categorize(t.description, t.amount, rules || [], cats, t.hint).categoryId;
+
+test('Wealthsimple carte de crédit (credit-card-activities)', () => {
+  const det = B.detect(ex('wealthsimple-carte-credit-exemple.csv'));
+  assert.equal(det.id, 'ws-card');
+  assert.equal(det.accountHint, 'Wealthsimple carte de crédit');
+  const { items, skipped } = B.applyMapping(det.rows, det.mapping);
+  assert.equal(skipped, 0);
+  assert.equal(items.length, 12);
+  const by = (txt) => items.find((t) => t.description.startsWith(txt));
+  // Le paiement reçu sur la carte est un transfert, jamais un revenu
+  const pay = by('Paiement reçu');
+  assert.equal(pay.amount, 28415);
+  assert.equal(catOf(pay), 'transferts');
+  assert.equal(pay.noRule, true);
+  // La catégorie donnée par la banque passe avant les mots-clés intégrés…
+  assert.equal(catOf(by('Zzz Commerce')), 'loisirs');
+  assert.equal(catOf(by('Boulangerie')), 'restaurants');
+  assert.equal(catOf(by('Fizz')), 'factures');
+  assert.equal(catOf(by('Clinique Dentaire')), 'sante');
+  // …sauf quand elle est trop vague (« Entretien ») : le mot-clé « antirouille » l'emporte sur « metro »
+  assert.equal(catOf(by('Antirouille')), 'transport');
+  // …et une règle de l'utilisateur passe avant la banque
+  assert.equal(catOf(by('Fizz'), [{ id: 'u', pattern: 'fizz', categoryId: 'abonnements' }]), 'abonnements');
+  // Un remboursement garde la catégorie du commerce (il réduit la dépense)
+  const refund = items.find((t) => t.type === 'Refund');
+  assert.equal(refund.amount, 2500);
+  assert.equal(catOf(refund), 'magasinage');
+});
+
+test('Wealthsimple compte chèques (chequing-activities)', () => {
+  const det = B.detect(ex('wealthsimple-compte-cheques-exemple.csv'));
+  assert.equal(det.id, 'ws-chequing');
+  const { items, skipped } = B.applyMapping(det.rows, det.mapping);
+  assert.equal(skipped, 0);
+  assert.equal(items.length, 15);
+  const by = (txt) => items.find((t) => t.description.startsWith(txt));
+  assert.equal(catOf(by('Paiement de la carte de crédit')), 'transferts');
+  assert.equal(catOf(by('Intérêts')), 'interets');
+  assert.equal(catOf(by('PAIE/PAYROLL')), 'salaire');
+  assert.equal(catOf(by('BANQUE MTGE')), 'logement');
+  assert.equal(catOf(by('HYDRO')), 'factures');
+  assert.equal(catOf(by('Syndicat')), 'logement');
+  assert.equal(catOf(by('Prime Wealthsimple')), 'autres-revenus');
+  assert.equal(catOf(by('Dépôt en argent')), 'autres-revenus');
+  // Paiement de facture vers une carte de crédit : transfert
+  assert.equal(catOf(by('visa banque exemple')), 'transferts');
+  // Virement à une personne : à classer par l'utilisateur, règle par bénéficiaire
+  const alex = by('Alex Exemple');
+  assert.equal(alex.description, 'Alex Exemple · Souper');
+  assert.equal(catOf(alex), null);
+  assert.equal(alex.ruleKey, 'alex exemple');
+  assert.ok(!JSON.stringify(items).includes('example.com'), "l'adresse courriel du bénéficiaire n'est pas conservée");
+  // Virements internes : la note dit où va l'argent
+  const urgence = items.find((t) => /urgence/i.test(t.description));
+  assert.equal(urgence.description, 'Virement interne (sortie) · Compte urgence');
+  assert.equal(catOf(urgence), 'epargne');
+  assert.equal(urgence.ruleKey, 'compte urgence');
+  assert.equal(catOf(items.find((t) => /CELI/.test(t.description))), 'investissement');
+  // Sans note : transfert, et aucune règle ne peut en être tirée
+  const plain = items.filter((t) => t.description === 'Virement interne (sortie)');
+  assert.equal(plain.length, 2);
+  assert.equal(catOf(plain[0]), 'transferts');
+  assert.equal(plain[0].noRule, true);
+  assert.equal(catOf(by('Virement interne (entrée)')), 'transferts');
+  // Une règle de l'utilisateur sur la note passe avant
+  assert.equal(catOf(urgence, [{ id: 'u', pattern: 'compte urgence ', categoryId: 'fond-prevoyance' }]), 'fond-prevoyance');
+  // Deux virements identiques le même jour restent distincts
+  const keys = B.dedupeKeys(items);
+  assert.equal(new Set(keys).size, items.length);
+  // La clé de doublon repose sur le texte du relevé, pas sur le libellé affiché
+  assert.ok(keys.some((k) => k.startsWith('2026-03-06|-28415|credit card payment#')));
+  assert.ok(keys.some((k) => k.startsWith('2026-03-02|-7500|internal transfer#')));
+});
+
+test('Statut des lignes : annulée ignorée, en attente signalée', () => {
+  const csv = 'transaction_date,transaction_type,status,merchant,amount,currency,notes,category\n' +
+    '2026-10-08,Purchase,Completed,Magasin A,-10.00,CAD,,Épicerie\n' +
+    '2026-10-08,Purchase,Pending,Magasin B,-20.00,CAD,,Épicerie\n' +
+    '2026-10-08,Purchase,Declined,Magasin C,-30.00,CAD,,Épicerie\n';
+  const det = B.detect(csv);
+  const { items, cancelled } = B.applyMapping(det.rows, det.mapping);
+  assert.equal(items.length, 2);
+  assert.equal(cancelled, 1);
+  assert.deepEqual(items.map((t) => t.pending), [false, true]);
+});
+
+test('Profil mémorisé sur un format connu : les colonnes spéciales sont gardées', () => {
+  const text = ex('wealthsimple-carte-credit-exemple.csv');
+  const first = B.detect(text);
+  // Ancien profil générique enregistré avant que le format soit reconnu
+  const saved = { [first.signature]: { hasHeader: true, date: 0, description: 3, amount: 4, type: 1, dateOrder: 'YMD', label: 'Format générique' } };
+  const again = B.detect(text, saved);
+  assert.equal(again.id, 'ws-card');
+  assert.equal(again.mapping.hint, 'ws-card');
+  const { items } = B.applyMapping(again.rows, again.mapping);
+  assert.equal(catOf(items.find((t) => t.type === 'Payment')), 'transferts');
+});
+
+test('Sens du montant, mises de côté et investissement', () => {
+  // Intérêts débités sur une carte = frais ; intérêts crédités = revenu
+  assert.equal(cat('INTERET', -127), 'frais');
+  assert.equal(cat('INTERET', 127), 'interets');
+  assert.equal(cat('Interest DEPOSIT INTEREST', 42), 'interets');
+  assert.equal(cat('PAYMENT THANK YOU/PAIEMEN T MERCI', 42000), 'transferts');
+  assert.equal(cat('COSTCO ESSENCE W123 LAVAL, QC', -6512), 'transport');
+  assert.equal(cat('COSTCO WHOLESALE W123 LAVAL, QC', -9875), 'epicerie');
+  assert.equal(cat('STH #101 BOUL EXEMPLE LAVAL, QC', -1890), 'restaurants');
+  assert.equal(cat('Wal-Mart Supercenter#1000', -1234), 'epicerie');
+  assert.equal(cat('Virement compte urgence', -10000), 'epargne');
+  assert.equal(cat('Virement CELI placements', -40000), 'investissement');
+  assert.equal(cat('Versement fond de prévoyance', -40000), 'fond-prevoyance');
+  assert.equal(cat('PREAUTHORIZED DEBIT WEALTHSIMPLE', -25000), 'transferts');
+  assert.equal(B.potFromNote('Faire grossir le compte urgence'), 'epargne');
+  assert.equal(B.potFromNote('REER 2026'), 'investissement');
+  assert.equal(B.potFromNote(''), null);
+  assert.equal(B.potFromNote('souper de fête'), null);
+  // Mot-clé fourni par le relevé : mot complet seulement
+  assert.ok(B.matchesKey('AGA', 'aga '));
+  assert.ok(!B.matchesKey('AGATHE BOUTIQUE', 'aga '));
+  assert.ok(B.matchesKey('AGATHE BOUTIQUE', 'aga'));
+});
+
+test('Données de la version 1 : les nouvelles catégories sont ajoutées sans rien perdre', () => {
+  const v1cats = B.DEFAULT_CATEGORIES.filter((c) => !B.V2_CATEGORY_IDS.includes(c.id)).map((c) => Object.assign({ budget: 0 }, c));
+  v1cats.push({ id: 'placements', name: 'Épargne et placements', icon: '🏦', kind: 'transfer', budget: 0 });
+  v1cats.find((c) => c.id === 'epicerie').budget = 60000;
+  const old = { app: 'budget-par-claude', version: 1, categories: v1cats, rules: [], accounts: [], profiles: {}, settings: {},
+    transactions: [{ id: 'a', date: '2026-10-01', desc: 'METRO', amount: -1000, cat: 'epicerie' }] };
+  const s = B.migrate(JSON.parse(JSON.stringify(old)));
+  assert.equal(s.version, 2);
+  for (const id of B.V2_CATEGORY_IDS) assert.ok(s.categories.some((c) => c.id === id), id);
+  assert.equal(s.categories.find((c) => c.id === 'epicerie').budget, 60000);
+  assert.equal(s.transactions.length, 1);
+  // « Épargne et placements » inutilisée : retirée. Utilisée : gardée.
+  assert.ok(!s.categories.some((c) => c.id === 'placements'));
+  const used = JSON.parse(JSON.stringify(old));
+  used.transactions.push({ id: 'b', date: '2026-10-02', desc: 'CELI', amount: -5000, cat: 'placements' });
+  assert.ok(B.migrate(used).categories.some((c) => c.id === 'placements'));
+  // Une deuxième migration ne change plus rien
+  const n = s.categories.length;
+  assert.equal(B.migrate(s).categories.length, n);
 });

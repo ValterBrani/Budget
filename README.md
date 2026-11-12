@@ -3,10 +3,11 @@
 Une application de budget personnel toute simple, en français, qui tourne entièrement dans le navigateur.
 
 - **Saisie express** : tape `45,20 metro` puis Entrée. Le montant, la catégorie (Épicerie) et la date sont déduits. `+2100 paie` ajoute un revenu, `hier` ou `3/11` change la date.
-- **Import des relevés CSV** : CIBC (comptes et cartes de crédit) et Wealthsimple (relevé mensuel, export d'activités) sont reconnus automatiquement. Les autres banques fonctionnent aussi : si les colonnes ne sont pas devinées, tu les choisis une fois et l'app retient le format.
+- **Import des relevés CSV** : CIBC (comptes et cartes de crédit) et Wealthsimple (compte chèques, carte de crédit, relevé mensuel, export d'activités) sont reconnus automatiquement. Les autres banques fonctionnent aussi : si les colonnes ne sont pas devinées, tu les choisis une fois et l'app retient le format.
 - **Pas de doublons** : réimporter un relevé qui chevauche le précédent n'ajoute que les nouvelles opérations.
-- **Classement automatique** : près de 500 mots-clés de commerces et d'organismes canadiens et québécois sont reconnus d'office (Metro, IGA, Tim Hortons, Hydro-Québec, Vidéotron, STM, SAQ…). Quand tu corriges une catégorie, l'app propose de l'appliquer aux opérations semblables et de s'en souvenir.
+- **Classement automatique** : plus de 500 mots-clés de commerces et d'organismes canadiens et québécois sont reconnus d'office (Metro, IGA, Tim Hortons, Hydro-Québec, Vidéotron, STM, SAQ…). Pour la carte Wealthsimple, la catégorie donnée par la banque sert aussi. Quand tu corriges une catégorie, l'app propose de l'appliquer aux opérations semblables et de s'en souvenir.
 - **Enveloppes** : un budget mensuel par catégorie, avec ce qui reste. Le bouton « Proposer selon mes 3 derniers mois » remplit les montants pour toi.
+- **Capacité d'investir** : revenus, moins dépenses, moins mises de côté (fond de prévoyance, épargne). Le montant investi dans le mois est affiché à côté. Les paiements de carte et les virements entre tes comptes ne comptent ni comme revenu ni comme dépense.
 - **Confidentialité** : aucune donnée ne quitte ton navigateur. Pas de serveur, pas de compte, pas de traceur.
 
 ## Mettre en ligne sur GitHub Pages (gratuit)
@@ -43,7 +44,11 @@ python -m http.server 8080
 
 **CIBC** : sur le site Services bancaires CIBC en direct (l'application mobile n'offre pas l'export), choisis le compte ou la carte, puis **Télécharger les transactions**, la période (jusqu'à 13 mois) et le format **CSV**. Le fichier n'a pas de ligne de titres : date, description, débit, crédit, et le numéro de carte masqué pour les cartes de crédit. L'app le reconnaît tel quel.
 
-**Wealthsimple** : sur le site web, dans **Activité** (export CSV), ou dans **Documents** → relevés mensuels → **Télécharger le CSV**. Le relevé mensuel contient les colonnes `date, transaction, description, amount, balance, currency`. Les codes Wealthsimple (`BUY`, `TRFOUT`, `INT`, `DIV`…) servent à classer les placements, transferts et intérêts.
+**Wealthsimple** : sur le site web, ouvre le compte chèques ou la carte de crédit et exporte son activité en CSV. Trois formats sont reconnus :
+
+- `chequing-activities-….csv` (compte chèques) : le type d'opération, le bénéficiaire et la note servent au classement. Un paiement de carte est un transfert. Un virement interne est un transfert, sauf si sa note dit où va l'argent : « compte urgence » va en Épargne, « CELI » ou « REER » en Investissement, « fond de prévoyance » en Fond de prévoyance. Sans note, l'app ne peut pas deviner : ajoute une note dans Wealthsimple, ou change la catégorie à la main.
+- `credit-card-activities-….csv` (carte de crédit) : la catégorie donnée par Wealthsimple est reprise, sauf si une de tes règles dit autre chose. Les lignes refusées ou annulées sont ignorées, celles en attente sont décochées.
+- Le relevé mensuel (`date, transaction, description, amount, balance, currency`) et l'export d'activités des comptes de placement. Les achats et ventes de titres (`BUY`, `SELL`) sont exclus des totaux.
 
 **Autres banques (Desjardins, BMO, RBC, TD, Banque Nationale…)** : cherche « Télécharger » ou « Exporter » dans tes services en ligne et choisis CSV. Point-virgule ou virgule, `1 234,56` ou `1,234.56`, `JJ/MM/AAAA` ou `AAAA-MM-JJ`, une colonne de montant ou deux colonnes retraits/dépôts : tout est géré. Ajuste au besoin dans « Colonnes du fichier ».
 
@@ -81,6 +86,7 @@ Aucune dépendance, aucune étape de compilation : on modifie un fichier, on rec
 ## Ajouter ou ajuster
 
 - **Une banque** : ajoute une fonction de détection dans `js/banks.js` (voir `detectCIBC` et `detectWealthsimple`), puis un exemple fictif dans `exemples/` et un test dans `tests/parsers.test.js`.
+- **Les types de catégories** : dépense, revenu, mise de côté, investissement, ou exclue des totaux. Ils se changent dans Réglages.
 - **Des commerces** : ajoute des mots-clés dans `RAW_RULES` de `js/categories.js`. Un mot-clé doit apparaître au début d'un mot de la description. Termine-le par une espace pour exiger le mot complet (`'bar '` ne trouve pas « barbier »).
 - **Les tests** : `node --test` (Node 18 ou plus récent).
 

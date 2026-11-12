@@ -105,19 +105,122 @@
     return 'n:' + Math.max(...rows.slice(0, 20).map((r) => r.length));
   }
 
-  // Codes de la colonne « transaction » des relevés Wealthsimple.
+  // Indices de classement tirés du relevé --------------------------------------
+  // strong : toujours appliqué. bank : passe après les règles de l'utilisateur,
+  // avant les mots-clés intégrés. weak : seulement si rien d'autre ne correspond.
+  const strong = (categoryId) => ({ categoryId, strong: true });
+  const bank = (categoryId) => ({ categoryId, level: 'bank' });
+  const weak = (categoryId) => ({ categoryId });
+
+  /** Vers quelle « enveloppe » va un virement entre ses propres comptes, d'après sa note. */
+  function potFromNote(note) {
+    const n = ' ' + B.normalizeText(note) + ' ';
+    if (n.trim() === '') return null;
+    if (/ (urgence|urgences|coussin|epargne|epargnes|savings|emergency) /.test(n)) return 'epargne';
+    if (/ prevoyance /.test(n)) return 'fond-prevoyance';
+    if (/ (celi|celiapp|reer|reee|ferr|tfsa|rrsp|fhsa|resp|placement|placements|investissement|investissements|investir|invest|bourse|fnb|etf) /.test(n)) return 'investissement';
+    return null;
+  }
+
+  // Codes de la colonne « transaction » des relevés mensuels Wealthsimple.
   function wealthsimpleHint(code) {
     const c = String(code || '').toUpperCase().trim();
     if (!c) return null;
-    if (/^(BUY|SELL|CONT|CONTRIBUTION|DRIP|REINVEST|SPLIT|STKDIS|CRYPTO)/.test(c)) return { categoryId: 'placements', strong: true };
-    if (/^(TRFIN|TRFOUT|TRFINTF|TRFOUTTF|TRF|INTERNAL|TRANSFER|WD$|WITHDRAWAL$|DEP$|DEPOSIT$|LOAN|RECALL)/.test(c)) return { categoryId: 'transferts', strong: true };
-    if (/^(INT|INTEREST|FPLINT)/.test(c)) return { categoryId: 'interets', strong: true };
-    if (/^(DIV|DIVIDEND|NRT|DISTRIBUTION)/.test(c)) return { categoryId: 'interets', strong: true };
-    if (/^(FEE|FEES|NRTFEE|FRAIS)/.test(c)) return { categoryId: 'frais', strong: true };
-    if (/^(REFUND|REIMB|CASHBACK|REWARD|PROMO|BONUS)/.test(c)) return { categoryId: 'remboursements', strong: false };
-    if (/TRADE/.test(c)) return { categoryId: 'placements', strong: true };
-    if (/MONEYMOVEMENT|MONEY MOVEMENT|INSTITUTIONAL/.test(c)) return { categoryId: 'transferts', strong: true };
+    // Achats et ventes à l'intérieur d'un compte de placement : ce n'est ni un revenu ni une dépense
+    if (/^(BUY|SELL|CONT|CONTRIBUTION|DRIP|REINVEST|SPLIT|STKDIS|CRYPTO)/.test(c) || /TRADE/.test(c)) return strong('transferts');
+    if (/^(TRFIN|TRFOUT|TRFINTF|TRFOUTTF|TRF|INTERNAL|TRANSFER|WD$|WITHDRAWAL$|DEP$|DEPOSIT$|LOAN|RECALL)/.test(c)) return bank('transferts');
+    if (/^(INT|INTEREST|FPLINT)/.test(c)) return strong('interets');
+    if (/^(DIV|DIVIDEND|NRT|DISTRIBUTION)/.test(c)) return strong('interets');
+    if (/^(FEE|FEES|NRTFEE|FRAIS)/.test(c)) return strong('frais');
+    if (/^(REFUND|REIMB|CASHBACK|REWARD|PROMO|BONUS)/.test(c)) return weak('remboursements');
+    if (/MONEYMOVEMENT|MONEY MOVEMENT|INSTITUTIONAL/.test(c)) return bank('transferts');
     return null;
+  }
+
+  // Catégories données par la banque (carte de crédit Wealthsimple) → catégories de l'application.
+  const BANK_CATEGORIES = [
+    [/\b(assurance|insurance)/, 'assurances'],
+    [/\b(epicerie|grocer)/, 'epicerie'],
+    [/\b(restaurant|cafe|coffee|alimentation|food|dining)/, 'restaurants'],
+    [/\b(bar|bars|nocturne|nightlife|divertissement|entertainment|activite|loisir|sport|fitness|remise en forme)/, 'loisirs'],
+    [/\b(essence|stationnement|peage|transport|taxi|covoiturage|gas|parking|transit|rideshare)/, 'transport'],
+    [/\b(internet|telephone|phone|services publics|utilit|facture)/, 'factures'],
+    [/\b(abonnement|subscription)/, 'abonnements'],
+    [/\b(medical|sante|health|pharmac|dentaire|dental)/, 'sante'],
+    [/\b(vol|vols|hotel|voyage|flight|travel|hebergement)/, 'voyages'],
+    [/\b(magasinage|vetement|shopping|clothing|electroni)/, 'magasinage'],
+    [/\b(education|scolarite|tuition)/, 'education'],
+    [/\b(animaux|animal|pets?)\b/, 'animaux'],
+    [/\b(cadeau|dons?|gift|charit)/, 'cadeaux'],
+    [/\b(frais|fees?)\b/, 'frais'],
+  ];
+  // Trop vagues pour passer avant les mots-clés (un antirouille et une quincaillerie y sont mêlés).
+  const BANK_CATEGORIES_WEAK = [[/\b(maison|entretien|home|maintenance|auto)/, 'autres-depenses']];
+
+  function bankCategoryHint(label) {
+    const n = B.normalizeText(label);
+    if (!n) return null;
+    for (const [re, id] of BANK_CATEGORIES) if (re.test(n)) return bank(id);
+    for (const [re, id] of BANK_CATEGORIES_WEAK) if (re.test(n)) return weak(id);
+    return null;
+  }
+
+  /** Statut d'une ligne : skip (annulée ou refusée), pending (en attente) ou ok. */
+  function rowStatus(v) {
+    const s = B.normalizeText(v);
+    if (!s) return 'ok';
+    if (/declin|cancel|annul|fail|echou|reject|rejet|refus|void|expire/.test(s)) return 'skip';
+    if (/pending|attente|processing|en cours|authoriz|autoris|hold/.test(s)) return 'pending';
+    return 'ok';
+  }
+
+  const cell = (r, m, k) => (m[k] != null && m[k] > -1 && r[m[k]] != null ? String(r[m[k]]).trim() : '');
+  const withNote = (label, note) => (note ? `${label} · ${note}` : label);
+  // Mot-clé de règle tiré d'une note : ses premiers mots
+  const noteKey = (note) => (note ? B.normalizeText(note).split(' ').slice(0, 5).join(' ') : null);
+
+  /** Carte de crédit Wealthsimple (credit-card-activities). */
+  function wsCardRow(r, m) {
+    const typeRaw = cell(r, m, 'type');
+    const type = B.normalizeText(typeRaw);
+    const merchant = cell(r, m, 'description');
+    const note = cell(r, m, 'note');
+    const keyDesc = merchant || typeRaw;
+    if (type === 'payment' || type === 'paiement') {
+      return { description: withNote('Paiement reçu sur la carte', note), keyDesc, noRule: true, hint: strong('transferts') };
+    }
+    return {
+      description: withNote(merchant || typeRaw || '(sans description)', note), keyDesc,
+      noRule: !merchant, hint: bankCategoryHint(cell(r, m, 'bankCat')),
+    };
+  }
+
+  const CARD_PAYEE = /\b(cibc|visa|mastercard|master card|amex|american express|carte de credit|credit card)\b/;
+
+  /** Compte chèques Wealthsimple (chequing-activities). */
+  function wsChequingRow(r, m, amount) {
+    const typeRaw = cell(r, m, 'type');
+    const type = B.normalizeText(typeRaw);
+    const subRaw = cell(r, m, 'subtype');
+    const sub = B.normalizeText(subRaw);
+    const payee = cell(r, m, 'description');
+    const note = cell(r, m, 'note');
+    const keyDesc = payee || typeRaw;
+    const generic = (label, hint) => ({ description: withNote(label, note), keyDesc, ruleKey: noteKey(note), noRule: !note, hint });
+
+    if (type === 'credit card payment') return generic('Paiement de la carte de crédit', strong('transferts'));
+    if (type === 'internal transfer') {
+      return generic(amount < 0 ? 'Virement interne (sortie)' : 'Virement interne (entrée)', bank(potFromNote(note) || 'transferts'));
+    }
+    if (type === 'interest') return generic('Intérêts', amount < 0 ? strong('frais') : strong('interets'));
+    if (type === 'promotion') return generic('Prime Wealthsimple', bank('autres-revenus'));
+    if (payee) {
+      // Paiement de facture vers une carte de crédit : c'est un transfert, les achats sont déjà dans le relevé de la carte
+      const toCard = sub === 'bill pay' && CARD_PAYEE.test(B.normalizeText(payee));
+      return { description: withNote(payee, note), keyDesc, ruleKey: B.normalizeText(payee), hint: toCard ? bank('transferts') : null };
+    }
+    if (type === 'deposit' && sub === 'cash deposit') return generic('Dépôt en argent', weak('autres-revenus'));
+    return generic([typeRaw, subRaw].filter(Boolean).join(' · ') || '(sans description)', null);
   }
 
   // Formats connus ---------------------------------------------------------
@@ -125,21 +228,41 @@
   function detectWealthsimple(rows) {
     const { map, H } = mapHeader(rows[0]);
     const has = (n) => H.includes(n);
+    const col = (n) => H.indexOf(n);
+    // Carte de crédit : transaction_date, transaction_type, status, merchant, amount, currency, notes, category
+    if (has('transaction date') && has('transaction type') && has('merchant') && has('amount')) {
+      return {
+        id: 'ws-card', label: 'Wealthsimple (carte de crédit)', bank: 'Wealthsimple', accountHint: 'Wealthsimple carte de crédit',
+        mapping: { hasHeader: true, date: col('transaction date'), description: col('merchant'), amount: col('amount'),
+          type: col('transaction type'), status: col('status'), note: col('notes'), bankCat: col('category'),
+          dateOrder: 'YMD', hint: 'ws-card' },
+      };
+    }
+    // Compte chèques : transaction_date, transaction_time, account_number, account_type, transaction_type,
+    // transaction_sub_type, status, payee, payee_email, amount, currency, notes
+    if (has('transaction date') && has('transaction type') && has('payee') && has('amount')) {
+      return {
+        id: 'ws-chequing', label: 'Wealthsimple (compte chèques)', bank: 'Wealthsimple', accountHint: 'Wealthsimple compte chèques',
+        mapping: { hasHeader: true, date: col('transaction date'), description: col('payee'), amount: col('amount'),
+          type: col('transaction type'), subtype: col('transaction sub type'), status: col('status'), note: col('notes'),
+          dateOrder: 'YMD', hint: 'ws-chequing' },
+      };
+    }
     // Relevé mensuel : date, transaction, description, amount, balance(, currency)
     if (has('date') && has('transaction') && has('description') && has('amount')) {
       return {
         id: 'ws-statement', label: 'Wealthsimple (relevé mensuel)', bank: 'Wealthsimple', accountHint: 'Wealthsimple',
-        mapping: { hasHeader: true, date: H.indexOf('date'), description: H.indexOf('description'),
-          amount: H.indexOf('amount'), type: H.indexOf('transaction'), hint: 'wealthsimple' },
+        mapping: { hasHeader: true, date: col('date'), description: col('description'),
+          amount: col('amount'), type: col('transaction'), hint: 'wealthsimple' },
       };
     }
     // Export d'activités : transaction_date, …, activity_type, activity_sub_type, name, net_cash_amount
     if ((has('transaction date') || has('date')) && has('net cash amount')) {
       return {
         id: 'ws-activities', label: "Wealthsimple (export d'activités)", bank: 'Wealthsimple', accountHint: 'Wealthsimple',
-        mapping: { hasHeader: true, date: H.indexOf(has('transaction date') ? 'transaction date' : 'date'),
-          description: H.indexOf('name') > -1 ? H.indexOf('name') : (map.description != null ? map.description : null),
-          amount: H.indexOf('net cash amount'), type: H.indexOf('activity type'), subtype: H.indexOf('activity sub type'),
+        mapping: { hasHeader: true, date: col(has('transaction date') ? 'transaction date' : 'date'),
+          description: col('name') > -1 ? col('name') : (map.description != null ? map.description : null),
+          amount: col('net cash amount'), type: col('activity type'), subtype: col('activity sub type'),
           hint: 'wealthsimple' },
       };
     }
@@ -186,9 +309,12 @@
     if (!det && !hasHeader) det = detectCIBC(rows);
     if (savedProfiles && savedProfiles[sig]) {
       const saved = savedProfiles[sig];
-      det = Object.assign({}, det || { id: 'saved', label: 'Format mémorisé', bank: '', accountHint: '' },
-        { mapping: Object.assign({}, saved), remembered: true });
-      if (saved.label) det.label = saved.label;
+      if (det) {
+        // Format connu : on garde ses colonnes spéciales et on reprend seulement les réglages de l'utilisateur
+        det = Object.assign({}, det, { mapping: Object.assign({}, det.mapping, saved, { hint: det.mapping.hint }), remembered: true });
+      } else {
+        det = { id: 'saved', label: saved.label || 'Format mémorisé', bank: '', accountHint: '', mapping: Object.assign({}, saved), remembered: true };
+      }
     }
     if (!det) {
       let map;
@@ -220,11 +346,17 @@
     return det;
   }
 
-  /** Convertit les lignes en transactions selon la configuration. */
+  /**
+   * Convertit les lignes en transactions selon la configuration.
+   * Chaque transaction : { date, description, amount (cents), hint, keyDesc, ruleKey, noRule, pending }.
+   *   keyDesc : texte stable du relevé, utilisé pour reconnaître les doublons ;
+   *   ruleKey : mot-clé à retenir si l'utilisateur corrige la catégorie (bénéficiaire ou note) ;
+   *   noRule  : libellé trop général pour en tirer une règle (« Virement interne » sans note).
+   */
   function applyMapping(rows, m) {
     const body = m.hasHeader ? rows.slice(1) : rows;
     const out = [];
-    let skipped = 0;
+    let skipped = 0, cancelled = 0;
     const has = (k) => m[k] != null && m[k] > -1;
     body.forEach((r, idx) => {
       const date = has('date') ? B.parseDate(r[m.date], m.dateOrder) : null;
@@ -236,30 +368,41 @@
         if (d != null || c != null) amount = (c != null ? Math.abs(c) : 0) - (d != null ? Math.abs(d) : 0);
       }
       if (!date || amount == null) { skipped++; return; }
+      const status = has('status') ? rowStatus(r[m.status]) : 'ok';
+      if (status === 'skip') { cancelled++; return; }
       if (m.invert) amount = -amount;
-      let description = has('description') ? r[m.description] : '';
-      const type = has('type') ? r[m.type] : '';
-      const subtype = has('subtype') ? r[m.subtype] : '';
-      if (!description) description = [type, subtype].filter(Boolean).join(' ') || '(sans description)';
-      description = description.replace(/\s+/g, ' ').trim();
-      let hint = null;
-      if (m.hint === 'wealthsimple') hint = wealthsimpleHint(type) || wealthsimpleHint(subtype);
-      out.push({ row: idx, date, description, amount, type, hint });
+      const type = cell(r, m, 'type');
+      let item;
+      if (m.hint === 'ws-card') item = wsCardRow(r, m);
+      else if (m.hint === 'ws-chequing') item = wsChequingRow(r, m, amount);
+      else {
+        const subtype = cell(r, m, 'subtype');
+        const description = cell(r, m, 'description') || [type, subtype].filter(Boolean).join(' ') || '(sans description)';
+        let hint = null;
+        if (m.hint === 'wealthsimple') {
+          hint = wealthsimpleHint(type) || wealthsimpleHint(subtype);
+          // Un virement vers un CELI, un REER ou un compte d'urgence dit où va l'argent
+          if (hint && hint.categoryId === 'transferts' && !hint.strong) hint = bank(potFromNote(description) || 'transferts');
+        }
+        item = { description, hint };
+      }
+      item.description = item.description.replace(/\s+/g, ' ').trim();
+      out.push(Object.assign({ row: idx, date, amount, type, pending: status === 'pending' }, item));
     });
-    return { items: out, skipped };
+    return { items: out, skipped, cancelled };
   }
 
-  /** Clé de dédoublonnage : date + montant + description, avec rang d'occurrence. */
+  /** Clé de dédoublonnage : date + montant + texte du relevé, avec rang d'occurrence. */
   function dedupeKeys(items) {
     const seen = {};
     return items.map((t) => {
-      const base = `${t.date}|${t.amount}|${B.normalizeText(t.description)}`;
+      const base = `${t.date}|${t.amount}|${B.normalizeText(t.keyDesc || t.description)}`;
       seen[base] = (seen[base] || 0) + 1;
       return `${base}#${seen[base]}`;
     });
   }
 
-  const api = { detect, applyMapping, dedupeKeys, mapHeader, inferColumns, wealthsimpleHint, looksLikeHeader };
+  const api = { detect, applyMapping, dedupeKeys, mapHeader, inferColumns, wealthsimpleHint, bankCategoryHint, potFromNote, looksLikeHeader };
   Object.assign(B, api);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

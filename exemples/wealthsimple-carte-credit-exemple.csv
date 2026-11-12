@@ -1,0 +1,13 @@
+transaction_date,transaction_type,status,merchant,amount,currency,notes,category
+2026-03-27,Purchase,Completed,Super C Laval,-38.64,CAD,,Épicerie
+2026-03-26,Purchase,Completed,Amzn Mktp Ca*Ab1Cd2Ef3,-19.99,CAD,,Autre - magasinage
+2026-03-24,Payment,Completed,,284.15,CAD,,Non catégorisé
+2026-03-22,Purchase,Completed,Fizz (Tx. Incl.),-40.24,CAD,,Internet et téléphone
+2026-03-20,Purchase,Completed,Boulangerie Du Coin,-8.75,CAD,,Autre - alimentation et boissons
+2026-03-18,Refund,Completed,Decathlon Laval,25.00,CAD,,Autre - magasinage
+2026-03-16,Purchase,Completed,Decathlon Laval,-64.99,CAD,,Autre - magasinage
+2026-03-13,Purchase,Completed,Antirouille Metro Laval,-129.00,CAD,,Entretien
+2026-03-11,Purchase,Completed,Clinique Dentaire Exemple,-180.00,CAD,,Médical
+2026-03-09,Purchase,Completed,Stm Station Exemple,-11.00,CAD,,Transport en commun
+2026-03-06,Purchase,Completed,Zzz Commerce Inconnu,-36.20,CAD,,Bars et vie nocturne
+2026-03-04,Cash Advance,Completed,Loto-Quebec,-10.00,CAD,,Divertissement
