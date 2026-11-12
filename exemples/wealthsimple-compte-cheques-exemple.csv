@@ -1,0 +1,16 @@
+transaction_date,transaction_time,account_number,account_type,transaction_type,transaction_sub_type,status,payee,payee_email,amount,currency,notes
+2026-03-01,00:00:00,00000000,Compte chèques,Interest,,Completed,,,1.52,CAD,
+2026-03-02,09:15:00,00000000,Compte chèques,Internal Transfer,Source,Completed,,,-75.00,CAD,Compte urgence
+2026-03-05,12:00:00,00000000,Compte chèques,Deposit,Aft,Completed,PAIE/PAYROLL,,2100.00,CAD,
+2026-03-06,10:20:00,00000000,Compte chèques,Credit Card Payment,,Completed,,,-284.15,CAD,
+2026-03-06,10:25:00,00000000,Compte chèques,Internal Transfer,Source,Completed,,,-300.00,CAD,CELI placements
+2026-03-09,08:00:00,00000000,Compte chèques,Internal Transfer,Source,Completed,,,-150.00,CAD,
+2026-03-09,08:00:00,00000000,Compte chèques,Internal Transfer,Source,Completed,,,-150.00,CAD,
+2026-03-09,08:05:00,00000000,Compte chèques,Withdrawal,Bill Pay,Completed,visa banque exemple,,-250.00,CAD,
+2026-03-12,19:30:00,00000000,Compte chèques,Withdrawal,E Transfer,Completed,Alex Exemple,alex@example.com,-45.00,CAD,Souper
+2026-03-15,23:00:00,00000000,Compte chèques,Withdrawal,Aft,Completed,BANQUE MTGE DEPT,,-650.00,CAD,
+2026-03-18,11:45:00,00000000,Compte chèques,Deposit,Cash Deposit,Completed,,,120.00,CAD,
+2026-03-20,13:00:00,00000000,Compte chèques,Promotion,Incentive Bonus,Completed,,,5.00,CAD,
+2026-03-25,07:30:00,00000000,Compte chèques,Withdrawal,Bill Pay,Completed,HYDRO-QUEBEC,,-88.15,CAD,
+2026-03-31,09:10:00,00000000,Compte chèques,Withdrawal,E Transfer,Completed,Syndicat Copropriete Exemple,syndic@example.com,-320.00,CAD,Frais de copropriété avril
+2026-03-31,09:40:00,00000000,Compte chèques,Internal Transfer,Destination,Completed,,,90.00,CAD,

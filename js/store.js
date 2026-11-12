@@ -11,11 +11,11 @@
   function defaultState() {
     return {
       app: 'budget-par-claude',
-      version: 1,
+      version: 2,
       categories: B.DEFAULT_CATEGORIES.map((c) => Object.assign({ budget: 0 }, c)),
       rules: [], // règles apprises : { id, pattern, categoryId }
       accounts: [], // { id, name, bank }
-      transactions: [], // { id, date, desc, amount (cents), cat, catSrc, acct, note, key, src }
+      transactions: [], // { id, date, desc, amount (cents), cat, catSrc, acct, note, key, src, rk?, noRule?, hint? }
       profiles: {}, // formats CSV mémorisés
       settings: {},
     };
@@ -24,6 +24,18 @@
   function migrate(s) {
     const d = defaultState();
     Object.keys(d).forEach((k) => { if (s[k] == null) s[k] = d[k]; });
+    if ((s.version || 1) < 2) {
+      // Version 2 : mises de côté et investissement
+      const have = new Set(s.categories.map((c) => c.id));
+      B.V2_CATEGORY_IDS.forEach((id) => {
+        const c = B.DEFAULT_CATEGORIES.find((x) => x.id === id);
+        if (c && !have.has(id)) s.categories.push(Object.assign({ budget: 0 }, c));
+      });
+      // L'ancienne catégorie « Épargne et placements » est retirée si elle ne sert à rien
+      const used = s.transactions.some((t) => t.cat === 'placements') || s.rules.some((r) => r.categoryId === 'placements');
+      if (!used) s.categories = s.categories.filter((c) => c.id !== 'placements');
+      s.version = 2;
+    }
     return s;
   }
 
