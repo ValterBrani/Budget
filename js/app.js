@@ -12,6 +12,8 @@
     quick: { type: 'expense', text: '', cat: '', catTouched: false, date: B.today(), acct: '' },
     queue: [],
     imp: null,
+    newCatIcon: 'tag',
+    iconTarget: null,
   };
 
   // Outils -------------------------------------------------------------------
@@ -73,7 +75,7 @@
     for (const [k, label] of groups) {
       const cs = S.categories.filter((c) => c.kind === k);
       if (!cs.length) continue;
-      h += `<optgroup label="${label}">` + cs.map((c) => `<option value="${esc(c.id)}"${c.id === selected ? ' selected' : ''}>${esc(c.icon)} ${esc(c.name)}</option>`).join('') + '</optgroup>';
+      h += `<optgroup label="${label}">` + cs.map((c) => `<option value="${esc(c.id)}"${c.id === selected ? ' selected' : ''}>${esc(c.name)}</option>`).join('') + '</optgroup>';
     }
     return h;
   }
@@ -82,19 +84,11 @@
       S.accounts.map((a) => `<option value="${esc(a.id)}"${a.id === selected ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
   }
 
-  // Petites icônes (traits simples)
-  const ICONS = {
-    home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
-    list: '<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
-    env: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
-    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
-    up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
-    ok: '<path d="M20 6 9 17l-5-5"/>',
-    warn: '<path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
-    over: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>',
-    trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
-  };
-  const icon = (n, cls) => `<svg class="ico ${cls || ''}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+  // Icônes de l'interface (voir js/icons.js)
+  const UI_ICONS = { ok: 'check', warn: 'triangle-alert', over: 'circle-alert', trash: 'trash-2' };
+  const icon = (n, cls) => B.icon(UI_ICONS[n] || n, cls);
+  /** Pastille avec l'icône d'une catégorie. Sans catégorie : « à classer ». */
+  const catIcon = (c) => `<span class="cat-ico ${c ? 'k-' + c.kind : 'k-none'}" aria-hidden="true">${B.icon(c ? c.icon : 'circle-help')}</span>`;
 
   // Notifications ------------------------------------------------------------
   let toastTimer = null;
@@ -303,7 +297,7 @@
       .sort((a, b) => b.spent - a.spent);
     const uncategorized = list.filter((t) => !t.cat && t.amount < 0).reduce((a, t) => a - t.amount, 0);
     const pots = S.categories.filter((c) => c.kind === 'saving' || c.kind === 'invest').map((c) => ({ c, v: spentIn(list, c.id) })).filter((r) => r.v !== 0);
-    const potsHTML = pots.length ? `<h3 class="sub">Mis de côté et investi</h3><ul class="pots">${pots.map(({ c, v }) => `<li><span class="env-name"><span class="env-ico" aria-hidden="true">${esc(c.icon)}</span>${esc(c.name)}</span><b class="num">${money(v)}</b></li>`).join('')}</ul>` : '';
+    const potsHTML = pots.length ? `<h3 class="sub">Mis de côté et investi</h3><ul class="pots">${pots.map(({ c, v }) => `<li><span class="env-name">${catIcon(c)}${esc(c.name)}</span><b class="num">${money(v)}</b></li>`).join('')}</ul>` : '';
     if (!rows.length && !uncategorized) return '<p class="muted">Aucune dépense ce mois-ci.</p>' + potsHTML;
     const maxSpent = Math.max(...rows.map((r) => r.spent), uncategorized, 1);
     const li = rows.map(({ c, spent }) => {
@@ -319,11 +313,11 @@
         status = `<button class="link small" data-action="go" data-to="budgets">Fixer un budget</button>`;
       }
       return `<li class="env">
-        <div class="env-top"><span class="env-name"><span class="env-ico" aria-hidden="true">${esc(c.icon)}</span>${esc(c.name)}</span>
+        <div class="env-top"><span class="env-name">${catIcon(c)}${esc(c.name)}</span>
           <span class="env-amt"><b>${money(spent)}</b>${c.budget > 0 ? ` <span class="muted">sur ${money(c.budget)}</span>` : ''}</span></div>
         ${bar}<div class="env-foot">${status}</div></li>`;
     }).join('');
-    const unc = uncategorized ? `<li class="env env-unc"><div class="env-top"><span class="env-name"><span class="env-ico" aria-hidden="true">❔</span>À catégoriser</span><span class="env-amt"><b>${money(uncategorized)}</b></span></div>
+    const unc = uncategorized ? `<li class="env env-unc"><div class="env-top"><span class="env-name">${catIcon(null)}À catégoriser</span><span class="env-amt"><b>${money(uncategorized)}</b></span></div>
       <div class="bar bar-plain"><span class="bar-fill" style="width:${(uncategorized / maxSpent) * 100}%"></span></div>
       <div class="env-foot"><button class="link small" data-action="show-uncat">Classer ces dépenses</button></div></li>` : '';
     return `<ul class="envelopes">${li}${unc}</ul>${potsHTML}`;
@@ -373,6 +367,7 @@
     const a = S.accounts.find((x) => x.id === t.acct);
     const k = kindOf(t);
     return `<li class="tx${t.cat ? '' : ' is-uncat'}" data-id="${esc(t.id)}">
+      ${catIcon(catOf(t.cat))}
       <div class="tx-main">
         <button type="button" class="tx-desc" data-action="edit-tx" title="Modifier">${esc(t.desc)}</button>
         <span class="tx-meta">${shortDate(t.date)}${a ? ', ' + esc(a.name) : ''}${t.note ? ', ' + esc(t.note) : ''}</span>
@@ -448,7 +443,7 @@
       <table class="budget-table">
         <thead><tr><th>Catégorie</th><th class="num">Moyenne 3 mois</th><th class="num">${esc(monthName(ui.month, { month: 'long' }))}</th><th class="num">Budget</th></tr></thead>
         <tbody>${cats.map((c) => `<tr>
-          <td><span class="env-ico" aria-hidden="true">${esc(c.icon)}</span>${esc(c.name)}</td>
+          <td><span class="env-name">${catIcon(c)}${esc(c.name)}</span></td>
           <td class="num muted">${money(avgSpent(c.id, 3))}</td>
           <td class="num">${money(spentIn(list, c.id))}</td>
           <td class="num"><label class="sr-only" for="b-${esc(c.id)}">Budget ${esc(c.name)}</label>
@@ -478,13 +473,13 @@
         <h2>Catégories</h2>
         <p class="muted">Une mise de côté (fond de prévoyance, épargne) réduit ta capacité d'investir sans compter comme une dépense. Un investissement est comparé à cette capacité. Une catégorie exclue des totaux n'est ni un revenu ni une dépense : virements entre tes comptes, paiements de carte.</p>
         <ul class="set-list">${S.categories.map((c) => `<li>
-          <label class="sr-only" for="ci-${esc(c.id)}">Icône</label><input class="emoji-input" id="ci-${esc(c.id)}" data-cat-icon="${esc(c.id)}" value="${esc(c.icon)}" maxlength="4">
+          <button type="button" class="icon-pick" data-action="pick-icon" data-target="${esc(c.id)}" aria-label="Changer l'icône de ${esc(c.name)}" title="Changer l'icône">${B.icon(c.icon)}</button>
           <label class="sr-only" for="cn-${esc(c.id)}">Nom</label><input id="cn-${esc(c.id)}" data-cat-name="${esc(c.id)}" value="${esc(c.name)}">
           <label class="sr-only" for="ck-${esc(c.id)}">Type</label><select id="ck-${esc(c.id)}" data-cat-kind="${esc(c.id)}">
             ${kindOptions(c.kind)}</select>
           <button class="icon-btn" data-action="del-cat" data-id="${esc(c.id)}" aria-label="Supprimer la catégorie ${esc(c.name)}">${icon('trash')}</button></li>`).join('')}</ul>
         <form class="inline-form" data-form="add-cat">
-          <label class="field"><span>Icône</span><input class="emoji-input" name="icon" value="🏷️" maxlength="4"></label>
+          <div class="field field-icon"><span>Icône</span><button type="button" class="icon-pick" id="newCatIcon" data-action="pick-icon" data-target="__new" aria-label="Choisir l'icône de la nouvelle catégorie" title="Choisir l'icône">${B.icon(ui.newCatIcon)}</button></div>
           <label class="field grow"><span>Nouvelle catégorie</span><input name="name" placeholder="Garderie" required></label>
           <label class="field"><span>Type</span><select name="kind">${kindOptions('expense')}</select></label>
           <button class="btn">Ajouter</button></form>
@@ -515,6 +510,38 @@
           <button class="btn btn-danger" data-action="wipe">Tout effacer</button>
         </div>
       </section>`;
+  }
+
+  // Choix de l'icône d'une catégorie -------------------------------------------------
+  function openIconPicker(target) {
+    ui.iconTarget = target;
+    const current = target === '__new' ? ui.newCatIcon : (catOf(target) || {}).icon;
+    const dlg = $('#iconDlg');
+    dlg.innerHTML = `<div class="dlg dlg-icons">
+      <h2>Choisir une icône</h2>
+      ${B.ICON_GROUPS.map(([title, items]) => `<h3 class="icon-group">${esc(title)}</h3>
+        <div class="icon-grid">${items.map(([name, label]) => `<button type="button" class="icon-choice" data-action="choose-icon" data-icon="${name}" aria-pressed="${name === current}" aria-label="${esc(label)}" title="${esc(label)}">${B.icon(name)}</button>`).join('')}</div>`).join('')}
+      <div class="dlg-foot"><span class="grow"></span><button type="button" class="btn" data-action="close-dlg">Annuler</button></div>
+    </div>`;
+    dlg.showModal();
+    const on = dlg.querySelector('[aria-pressed="true"]');
+    if (on) on.focus();
+  }
+
+  function chooseIcon(name) {
+    if (!B.ICONS[name]) return;
+    $('#iconDlg').close();
+    if (ui.iconTarget === '__new') {
+      ui.newCatIcon = name;
+      const b = $('#newCatIcon');
+      if (b) { b.innerHTML = B.icon(name); b.focus(); }
+      return;
+    }
+    const c = catOf(ui.iconTarget);
+    if (!c) return;
+    c.icon = name;
+    persist();
+    render();
   }
 
   // Modification d'une opération -------------------------------------------------
@@ -855,6 +882,8 @@
       case 'clear-filters': ui.filters = Object.assign(ui.filters, { q: '', cat: '', acct: '', type: '' }); render(); break;
       case 'more': ui.limit += 200; render(); break;
       case 'edit-tx': openEdit(txId); break;
+      case 'pick-icon': openIconPicker(el.dataset.target); break;
+      case 'choose-icon': chooseIcon(el.dataset.icon); break;
       case 'delete-tx': {
         const id = el.dataset.id;
         const t = S.transactions.find((x) => x.id === id);
@@ -952,7 +981,9 @@
       const tx = S.transactions.find((x) => x.id === t.closest('[data-id]').dataset.id);
       tx.cat = t.value || null; tx.catSrc = 'user';
       persist();
-      t.closest('.tx').classList.toggle('is-uncat', !tx.cat);
+      const row = t.closest('.tx');
+      row.classList.toggle('is-uncat', !tx.cat);
+      row.querySelector('.cat-ico').outerHTML = catIcon(catOf(tx.cat));
       afterCategoryChange(tx);
       if (ui.filters.cat === '__none' || ui.view === 'dashboard') render();
       return;
@@ -966,7 +997,6 @@
     }
     if (d.acctName) { const a = S.accounts.find((x) => x.id === d.acctName); a.name = t.value.trim() || a.name; persist(); return; }
     if (d.catName) { catOf(d.catName).name = t.value.trim() || catOf(d.catName).name; persist(); return; }
-    if (d.catIcon) { catOf(d.catIcon).icon = t.value.trim() || '🏷️'; persist(); return; }
     if (d.catKind) { catOf(d.catKind).kind = t.value; persist(); return; }
     if (d.rulePattern) { S.rules.find((r) => r.id === d.rulePattern).pattern = t.value.trim(); persist(); return; }
     if (d.ruleCat) { S.rules.find((r) => r.id === d.ruleCat).categoryId = t.value; persist(); return; }
@@ -1025,7 +1055,8 @@
       const name = String(fd.get('name')).trim();
       let id = B.normalizeText(name).replace(/ /g, '-') || B.uid();
       if (catOf(id)) id += '-' + B.uid().slice(-4);
-      S.categories.push({ id, name, icon: String(fd.get('icon') || '🏷️').trim(), kind: fd.get('kind'), budget: 0 });
+      S.categories.push({ id, name, icon: ui.newCatIcon, kind: fd.get('kind'), budget: 0 });
+      ui.newCatIcon = 'tag';
     }
     if (kind === 'add-rule') {
       if (!fd.get('cat')) { toast('Choisis une catégorie pour cette règle.'); return; }
@@ -1055,6 +1086,7 @@
   $('#importDlg').addEventListener('close', () => { ui.imp = null; ui.queue = []; });
   let resizeT;
   window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(drawChart, 150); });
+  $$('[data-ico]').forEach((el) => el.insertAdjacentHTML('afterbegin', B.icon(el.dataset.ico)));
   window.addEventListener('hashchange', route);
   window.addEventListener('storage', (e) => { if (e.key === B.KEY) { S = B.load(); render(); } });
   route();

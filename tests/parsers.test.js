@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 require('../js/csv.js');
+require('../js/icons.js');
 require('../js/categories.js');
 require('../js/banks.js');
 require('../js/store.js');
@@ -303,7 +304,7 @@ test('Données de la version 1 : les nouvelles catégories sont ajoutées sans r
   const old = { app: 'budget-par-claude', version: 1, categories: v1cats, rules: [], accounts: [], profiles: {}, settings: {},
     transactions: [{ id: 'a', date: '2026-10-01', desc: 'METRO', amount: -1000, cat: 'epicerie' }] };
   const s = B.migrate(JSON.parse(JSON.stringify(old)));
-  assert.equal(s.version, 2);
+  assert.equal(s.version, 3);
   for (const id of B.V2_CATEGORY_IDS) assert.ok(s.categories.some((c) => c.id === id), id);
   assert.equal(s.categories.find((c) => c.id === 'epicerie').budget, 60000);
   assert.equal(s.transactions.length, 1);
@@ -315,4 +316,41 @@ test('Données de la version 1 : les nouvelles catégories sont ajoutées sans r
   // Une deuxième migration ne change plus rien
   const n = s.categories.length;
   assert.equal(B.migrate(s).categories.length, n);
+});
+
+test('Icônes : chaque catégorie par défaut et chaque choix offert existe', () => {
+  for (const c of B.DEFAULT_CATEGORIES) assert.ok(B.ICONS[c.icon], `${c.id} : ${c.icon}`);
+  const offered = B.ICON_GROUPS.flatMap(([, items]) => items.map(([name]) => name));
+  assert.equal(new Set(offered).size, offered.length);
+  for (const name of offered) assert.ok(B.ICONS[name], name);
+  for (const c of B.DEFAULT_CATEGORIES) assert.ok(offered.includes(c.icon), `${c.icon} doit être offerte`);
+  // Un nom inconnu donne l'étiquette, jamais une icône vide
+  assert.equal(B.icon('inconnue'), B.icon('tag'));
+  assert.ok(B.icon('house').startsWith('<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path'));
+});
+
+test('Données de la version 2 : les emoji des catégories deviennent des icônes', () => {
+  const emoji = { logement: '🏠', restaurants: '🍽️', voyages: '✈️', remboursements: '↩️', 'fond-prevoyance': '☂️', epargne: '🐷' };
+  const cats = B.DEFAULT_CATEGORIES.map((c) => Object.assign({ budget: 0 }, c, { icon: emoji[c.id] || '📦' }));
+  cats.find((c) => c.id === 'transport').icon = '🚲'; // emoji inconnu sur une catégorie par défaut
+  cats.push({ id: 'garderie', name: 'Garderie', icon: '🏷️', kind: 'expense', budget: 12000 });
+  cats.push({ id: 'perso', name: 'Perso', icon: '🦄', kind: 'expense', budget: 0 });
+  const s = B.migrate({ app: 'budget-par-claude', version: 2, categories: cats, rules: [], accounts: [], profiles: {}, settings: {}, transactions: [] });
+  assert.equal(s.version, 3);
+  const icon = (id) => s.categories.find((c) => c.id === id).icon;
+  assert.equal(icon('logement'), 'house');
+  assert.equal(icon('restaurants'), 'utensils');
+  assert.equal(icon('voyages'), 'plane');
+  assert.equal(icon('remboursements'), 'undo-2');
+  assert.equal(icon('fond-prevoyance'), 'umbrella');
+  assert.equal(icon('epargne'), 'piggy-bank');
+  assert.equal(icon('transport'), 'car');
+  assert.equal(icon('garderie'), 'tag');
+  assert.equal(icon('perso'), 'tag');
+  assert.equal(s.categories.find((c) => c.id === 'garderie').budget, 12000);
+  for (const c of s.categories) assert.ok(B.ICONS[c.icon], c.id);
+  // Une icône déjà choisie n'est pas touchée par une nouvelle migration
+  s.categories.find((c) => c.id === 'perso').icon = 'star';
+  s.version = 2;
+  assert.equal(B.migrate(s).categories.find((c) => c.id === 'perso').icon, 'star');
 });

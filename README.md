@@ -70,6 +70,7 @@ Dans **Réglages**, exporte une sauvegarde (`.json`) régulièrement. Tu peux la
 ```
 index.html             Page unique de l'application
 css/style.css          Styles (thème clair et sombre automatiques)
+js/icons.js            Icônes au trait (collection Lucide, licences ISC et MIT)
 js/csv.js              Lecture CSV, montants et dates (tous formats)
 js/banks.js            Reconnaissance des formats CIBC, Wealthsimple et générique
 js/categories.js       Catégories par défaut, mots-clés des commerces, classement automatique
@@ -86,6 +87,7 @@ Aucune dépendance, aucune étape de compilation : on modifie un fichier, on rec
 ## Ajouter ou ajuster
 
 - **Une banque** : ajoute une fonction de détection dans `js/banks.js` (voir `detectCIBC` et `detectWealthsimple`), puis un exemple fictif dans `exemples/` et un test dans `tests/parsers.test.js`.
+- **Une icône** : copie le contenu du `<svg>` de l'icône depuis [lucide.dev](https://lucide.dev) dans `ICONS` de `js/icons.js`, puis ajoute son nom et un libellé dans `ICON_GROUPS` pour l'offrir dans les réglages.
 - **Les types de catégories** : dépense, revenu, mise de côté, investissement, ou exclue des totaux. Ils se changent dans Réglages.
 - **Des commerces** : ajoute des mots-clés dans `RAW_RULES` de `js/categories.js`. Un mot-clé doit apparaître au début d'un mot de la description. Termine-le par une espace pour exiger le mot complet (`'bar '` ne trouve pas « barbier »).
 - **Les tests** : `node --test` (Node 18 ou plus récent).
