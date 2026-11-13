@@ -11,7 +11,7 @@
   function defaultState() {
     return {
       app: 'budget-par-claude',
-      version: 2,
+      version: 3,
       categories: B.DEFAULT_CATEGORIES.map((c) => Object.assign({ budget: 0 }, c)),
       rules: [], // règles apprises : { id, pattern, categoryId }
       accounts: [], // { id, name, bank }
@@ -35,6 +35,15 @@
       const used = s.transactions.some((t) => t.cat === 'placements') || s.rules.some((r) => r.categoryId === 'placements');
       if (!used) s.categories = s.categories.filter((c) => c.id !== 'placements');
       s.version = 2;
+    }
+    if (s.version < 3) {
+      // Version 3 : les emoji des catégories deviennent des icônes
+      s.categories.forEach((c) => {
+        if (B.ICONS[c.icon]) return;
+        const def = B.DEFAULT_CATEGORIES.find((x) => x.id === c.id);
+        c.icon = B.iconForEmoji(c.icon) || (def ? def.icon : 'tag');
+      });
+      s.version = 3;
     }
     return s;
   }
