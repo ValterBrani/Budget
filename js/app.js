@@ -165,7 +165,7 @@
         <div class="quick-details">
           <output id="quickAmount" class="quick-amount" aria-live="polite"></output>
           <label class="field"><span>Catégorie</span><select id="quickCat">${catOptions(q.cat)}</select></label>
-          <label class="field"><span>Date</span><input type="date" id="quickDate" value="${esc(q.date)}" max="2100-12-31"></label>
+          <label class="field"><span>Date</span><span class="date-box"><input type="date" id="quickDate" value="${esc(q.date)}" max="2100-12-31"></span></label>
           <label class="field"><span>Compte</span><select id="quickAcct">${acctOptions(q.acct)}</select></label>
           <button type="submit" class="btn btn-light">Ajouter</button>
         </div>
@@ -287,7 +287,6 @@
         <button class="btn btn-primary" data-action="open-import">Importer un relevé CSV</button>
         <button class="btn" data-action="load-demo">Essayer avec des données d'exemple</button>
       </div>
-      <p class="muted small">Tes données restent dans ce navigateur. Rien n'est envoyé sur Internet.</p>
     </section>`;
   }
 
@@ -557,7 +556,7 @@
         <label class="field"><span>Sens</span><select name="dir"><option value="out"${t.amount <= 0 ? ' selected' : ''}>Sortie d'argent</option><option value="in"${t.amount > 0 ? ' selected' : ''}>Entrée d'argent</option></select></label>
       </div>
       <div class="field-row">
-        <label class="field"><span>Date</span><input type="date" name="date" value="${esc(t.date)}" required></label>
+        <label class="field"><span>Date</span><span class="date-box"><input type="date" name="date" value="${esc(t.date)}" required></span></label>
         <label class="field"><span>Compte</span><select name="acct">${acctOptions(t.acct)}</select></label>
       </div>
       <label class="field"><span>Catégorie</span><select name="cat">${catOptions(t.cat)}</select></label>

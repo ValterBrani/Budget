@@ -45,6 +45,8 @@
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --r-panel: 16px;
   --r-ctl: 10px;
+  --ctl-h: 40px;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234c5650' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 @media (prefers-color-scheme: dark) {
@@ -77,6 +79,7 @@
     --tip-bg: #ecf0ed;
     --tip-ink: #17201b;
     --focus: #6fb0ff;
+    --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b6beb8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 }
 
@@ -127,7 +130,7 @@ button, input, select { font: inherit; color: inherit; }
 .month-nav h1::first-letter { text-transform: uppercase; }
 
 /* Boutons et champs ------------------------------------------------------ */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 15px; border-radius: var(--r-ctl); border: 1px solid var(--line-2); background: var(--surface); font-weight: 600; font-size: 14px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--ctl-h); padding: 8px 15px; border-radius: var(--r-ctl); border: 1px solid var(--line-2); background: var(--surface); font-weight: 600; font-size: 14px; cursor: pointer; text-decoration: none; white-space: nowrap; }
 .btn:hover { border-color: var(--ink-2); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -139,6 +142,7 @@ button, input, select { font: inherit; color: inherit; }
 .btn-small { min-height: 34px; padding: 5px 12px; font-size: 13px; }
 .btn-import { border-color: var(--accent); color: var(--accent); gap: 0; }
 .btn-import .ico { width: 17px; height: 17px; margin-right: 8px; }
+.month-nav[hidden] + .btn-import { margin-left: auto; }
 @media (prefers-color-scheme: dark) { .btn-import { border-color: var(--pos); color: var(--pos); } }
 .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 14px; }
 .icon-btn { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 999px; border: 0; background: transparent; cursor: pointer; color: var(--ink-2); }
@@ -148,13 +152,25 @@ button, input, select { font: inherit; color: inherit; }
 @media (prefers-color-scheme: dark) { .link { color: var(--pos); } }
 
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.field > span { font-size: 12.5px; color: var(--muted); font-weight: 550; }
+.field > span:first-child { font-size: 12.5px; color: var(--muted); font-weight: 550; }
+/* Champs : l'apparence native est retirée pour que la hauteur et la largeur soient les mêmes
+   dans tous les navigateurs (Safari sur iPhone impose sinon ses propres dimensions). */
 input:where(:not([type="checkbox"]):not([type="file"])), select {
-  min-height: 40px; padding: 7px 11px; border-radius: var(--r-ctl);
-  border: 1px solid var(--line-2); background: var(--surface); width: 100%; min-width: 0;
+  -webkit-appearance: none; appearance: none;
+  height: var(--ctl-h); margin: 0; padding: 0 11px; border-radius: var(--r-ctl);
+  border: 1px solid var(--line-2); background-color: var(--surface); width: 100%; min-width: 0;
 }
 input:hover, select:hover { border-color: var(--ink-2); }
-select { padding-right: 28px; }
+select { padding-right: 32px; background-image: var(--chev); background-repeat: no-repeat; background-position: right 10px center; background-size: 15px 15px; text-overflow: ellipsis; }
+input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
+/* Champ de date : le cadre est porté par .date-box, pas par le champ lui-même.
+   Sur iPhone, un champ de date dépasse de son conteneur dès qu'il a une bordure ou une marge intérieure. */
+.date-box { display: flex; align-items: center; height: var(--ctl-h); padding: 0 11px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background-color: var(--surface); overflow: hidden; min-width: 0; }
+.date-box:hover { border-color: var(--ink-2); }
+.date-box:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.date-box input { flex: 1 1 auto; width: 100%; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; outline: none; text-align: left; }
+.date-box input::-webkit-date-and-time-value { text-align: left; margin: 0; }
+.date-box input::-webkit-datetime-edit { padding: 0; }
 input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
 .check { display: flex; align-items: center; gap: 10px; margin: 10px 0; cursor: pointer; }
 .field-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -167,7 +183,7 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .seg button { border: 0; background: transparent; color: rgba(255, 255, 255, .78); padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 14px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: #ffffff; color: #1d5a42; }
 .quick .quick-input.quick-input {
-  flex: 1; min-height: 60px; border: 0; border-bottom: 2px solid rgba(255, 255, 255, .35); border-radius: 0;
+  flex: 1; height: 60px; border: 0; border-bottom: 2px solid rgba(255, 255, 255, .35); border-radius: 0;
   background: transparent; color: #ffffff; padding: 4px 2px;
   font-family: var(--font-display); font-size: clamp(24px, 3.4vw, 34px); font-weight: 500; letter-spacing: -0.01em;
 }
@@ -178,12 +194,13 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .quick-amount { font-family: var(--font-display); font-size: 22px; font-weight: 650; min-width: 120px; padding-bottom: 6px; }
 .quick-amount.is-empty { opacity: .45; }
 .quick .field { flex: 1 1 160px; }
-.quick .field > span { color: rgba(255, 255, 255, .72); }
-.quick select, .quick input[type="date"] { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .22); color: #ffffff; }
+.quick .field > span:first-child { color: rgba(255, 255, 255, .72); }
+.quick { --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+.quick select, .quick .date-box { background-color: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .22); color: #ffffff; }
 .quick select option, .quick select optgroup { color: #17201b; background: #ffffff; }
-.quick select:hover, .quick input[type="date"]:hover { border-color: rgba(255, 255, 255, .55); }
+.quick select:hover, .quick .date-box:hover { border-color: rgba(255, 255, 255, .55); }
 .quick input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .8; }
-.quick :focus-visible { outline-color: #ffffff; }
+.quick :focus-visible, .quick .date-box:has(input:focus-visible) { outline-color: #ffffff; }
 .quick-hint { margin: 12px 0 0; font-size: 13px; color: rgba(255, 255, 255, .7); }
 
 /* Résumé du mois ---------------------------------------------------------- */
@@ -277,8 +294,8 @@ tfoot th, tfoot td { border-bottom: 0; }
 .tx-desc { border: 0; background: none; padding: 0; text-align: left; font-weight: 550; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tx-desc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tx-meta { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tx-cat { min-height: 36px; padding-top: 5px; padding-bottom: 5px; font-size: 14px; }
-.tx.is-uncat .tx-cat { background: var(--uncat-bg); border-color: var(--uncat-line); }
+.tx-cat { height: 36px; font-size: 14px; }
+.tx.is-uncat .tx-cat { background-color: var(--uncat-bg); border-color: var(--uncat-line); }
 .tx-amt { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tx-amt.is-transfer { color: var(--muted); font-weight: 500; }
 
@@ -288,6 +305,7 @@ tfoot th, tfoot td { border-bottom: 0; }
 .set-list { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
 .set-list li { display: flex; align-items: center; gap: 10px; }
 .set-list li > input { flex: 1 1 auto; }
+.set-list li > .muted { flex: none; min-width: 88px; text-align: right; white-space: nowrap; }
 .set-list li > select { flex: 0 1 230px; min-width: 190px; }
 .icon-pick { display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: var(--r-ctl); border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-2); cursor: pointer; }
 .icon-pick:hover { border-color: var(--ink-2); color: var(--ink); }
@@ -324,7 +342,7 @@ dialog::backdrop { background: rgba(10, 22, 16, .5); }
 .imp-table-wrap { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
 .imp-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
 .imp-table td, .imp-table th { padding: 6px 10px; font-size: 14px; }
-.imp-table select { min-height: 34px; padding-top: 4px; padding-bottom: 4px; font-size: 13.5px; min-width: 170px; }
+.imp-table select { height: 34px; font-size: 13.5px; min-width: 170px; }
 .imp-table tr.is-off td { color: var(--muted); }
 .imp-table tr.is-dup td { opacity: .55; }
 .dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 40px 20px; border: 2px dashed var(--line-2); border-radius: 16px; background: var(--bg); cursor: pointer; }
@@ -353,6 +371,10 @@ dialog::backdrop { background: rgba(10, 22, 16, .5); }
 
 /* Petits écrans --------------------------------------------------------------------- */
 @media (max-width: 760px) {
+  :root { --ctl-h: 44px; }
+  /* 16 px au minimum : en dessous, Safari sur iPhone agrandit la page quand on touche un champ */
+  input:where(:not([type="checkbox"]):not([type="file"])), select, .tx-cat, .imp-table select, .date-box input { font-size: 16px; }
+  .tx-cat { height: 40px; }
   body { padding-bottom: 76px; }
   .wrap { padding: 0 14px; }
   .topbar { backdrop-filter: none; background: var(--bg); }
@@ -370,12 +392,10 @@ dialog::backdrop { background: rgba(10, 22, 16, .5); }
   .quick { margin: 14px 0 16px; padding: 16px 16px 12px; border-radius: 18px; }
   .quick-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .seg { align-self: flex-start; }
-  .quick-details { gap: 10px; }
-  .quick-input.quick .quick-input.quick-input { min-height: 50px; }
-  .quick-details { margin-top: 10px; }
-  .quick-amount { flex: 1 1 100%; padding-bottom: 0; font-size: 20px; }
-  .quick .field { flex: 1 1 calc(50% - 5px); }
-  .quick-details .btn { flex: 1 1 calc(50% - 5px); min-height: 40px; }
+  .quick .quick-input.quick-input { height: 50px; }
+  /* Grille de deux colonnes égales : Catégorie et Date, puis Compte et Ajouter */
+  .quick-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 10px; align-items: end; margin-top: 10px; }
+  .quick-amount { grid-column: 1 / -1; min-width: 0; padding-bottom: 0; font-size: 20px; }
   .quick-hint { display: none; }
   .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
   .sum-item { border-right: 0; margin: 0; padding: 0; }
@@ -388,6 +408,22 @@ dialog::backdrop { background: rgba(10, 22, 16, .5); }
   .dlg { padding: 18px 16px; min-height: 100%; }
   .budget-table th:nth-child(2), .budget-table td:nth-child(2) { display: none; }
   #toast { bottom: 88px; }
+  /* Rien ne doit dépasser de la largeur de l'écran */
+  .btn { white-space: normal; }
+  .panel-head { flex-wrap: wrap; row-gap: 8px; }
+  /* Réglages : le nom sur une ligne, le type et la corbeille sur la suivante */
+  .set-list { gap: 14px; }
+  .set-list li { flex-wrap: wrap; }
+  .set-list li > input { flex: 1 1 180px; }
+  .set-list li > select { flex: 1 1 150px; min-width: 0; }
+}
+
+/* Très petits écrans : le bouton d'import ne garde que son icône */
+@media (max-width: 380px) {
+  .btn-import { padding: 0; width: 40px; }
+  .btn-import .btn-label { display: none; }
+  .btn-import .ico { margin-right: 0; }
+  .month-nav .icon-btn { width: 34px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
